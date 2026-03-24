@@ -1,356 +1,587 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  XMarkIcon, 
-  FolderIcon, 
-  ArrowDownTrayIcon, 
-  MagnifyingGlassIcon,
-  Squares2X2Icon,
-  ViewColumnsIcon,
+import { createElement, memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion as Motion } from 'framer-motion';
+import {
+  ArrowDownTrayIcon,
+  ArrowLeftIcon,
+  ArrowTopRightOnSquareIcon,
+  Bars3Icon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  Bars3BottomLeftIcon,
-  Bars3Icon,
-  MinusIcon,
-  PlusIcon
+  FolderIcon,
+  MagnifyingGlassIcon,
+  PhotoIcon,
+  Squares2X2Icon,
+  ViewColumnsIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { useGitHubWallpapers } from './hooks/useGitHubWallpapers';
 
-// --- Github Link Component ---
-const GithubLink = ({ collapsed }) => (
-  <a 
-    href="https://github.com/revanthlol/gallery" 
-    target="_blank"
-    className={`mt-2 mb-2 flex items-center justify-center gap-3 p-2.5 rounded-xl bg-[#121212] border border-white/5 text-zinc-500 hover:text-white hover:bg-white/10 transition-all ${collapsed ? 'aspect-square mx-auto w-10' : 'mx-4'}`}
-    title="View on GitHub"
-  >
-    <svg className="w-5 h-5 fill-current shrink-0" viewBox="0 0 98 96" xmlns="http://www.w3.org/2000/svg">
-      <path fillRule="evenodd" clipRule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z" />
-    </svg>
-    {!collapsed && <span className="text-xs font-semibold">Source Code</span>}
-  </a>
-);
+const APP_REPO_URL = 'https://github.com/revanthlol/gallery';
+const WALLPAPER_REPO_URL = 'https://github.com/revanthlol/wallpapers';
+const LOADING_MESSAGES = [
+  'Curating pixels so you do not have to.',
+  'Fun fact: darker wallpapers usually hide icon clutter better.',
+  'Loading images, not summoning them from the void.',
+  'A clean wallpaper is desktop hygiene with style.',
+  'Preheating the gallery for smoother scrolling.',
+];
 
-// --- Transition Variants for Slide Effect ---
 const slideVariants = {
   enter: (direction) => ({
-    x: direction > 0 ? 500 : -500,
+    x: direction > 0 ? 180 : -180,
     opacity: 0,
-    scale: 0.9,
+    scale: 0.97,
   }),
   center: {
-    zIndex: 1,
     x: 0,
     opacity: 1,
     scale: 1,
   },
   exit: (direction) => ({
-    zIndex: 0,
-    x: direction < 0 ? 500 : -500,
+    x: direction < 0 ? 180 : -180,
     opacity: 0,
-    scale: 0.9,
+    scale: 0.97,
   }),
 };
 
-// --- Wallpaper Card ---
-const WallpaperCard = ({ wallpaper, onClick }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 15 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.4 }}
-    onClick={() => onClick(wallpaper)}
-    className="mb-6 break-inside-avoid group relative rounded-xl overflow-hidden bg-[#121212] border border-white/5 cursor-zoom-in shadow-sm hover:shadow-indigo-500/10 hover:border-white/10 transition-all duration-300"
-  >
-    <div className="w-full bg-[#18181b]">
-      <img
-        src={wallpaper.thumbnail}
-        alt={wallpaper.name}
-        className="w-full h-auto object-cover opacity-90 group-hover:opacity-100 transition-opacity duration-300"
-        loading="lazy" 
-      />
-    </div>
-    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-    <div className="absolute bottom-0 inset-x-0 p-3 translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none">
-       <p className="text-white font-bold text-xs truncate drop-shadow-md">{wallpaper.name}</p>
-    </div>
-  </motion.div>
-);
+function preloadImage(src) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = resolve;
+    image.onerror = resolve;
+    image.src = src;
+    if (image.complete) resolve();
+  });
+}
 
-export default function App() {
-  const { wallpapers, folders, loading } = useGitHubWallpapers();
-  const [selectedFolder, setSelectedFolder] = useState('All');
-  const [searchQuery, setSearchQuery] = useState('');
-  
-  // Modal State
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [direction, setDirection] = useState(0); // For slide animations
-  
-  // Layout State
-  const [denseLayout, setDenseLayout] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [zoomLevel, setZoomLevel] = useState(1);
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia(query).matches;
+  });
 
-  // Filter
-  const filteredItems = useMemo(() => {
-    let result = wallpapers;
-    if (selectedFolder !== 'All') result = result.filter(w => w.folder === selectedFolder);
-    if (searchQuery) result = result.filter(w => w.name.toLowerCase().includes(searchQuery.toLowerCase()));
-    return result;
-  }, [wallpapers, selectedFolder, searchQuery]);
-
-  // Handle Keyboard
   useEffect(() => {
-    if (!selectedImage) return;
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') closeImage();
-      if (e.key === 'ArrowRight') changeImage(1);
-      if (e.key === 'ArrowLeft') changeImage(-1);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedImage, filteredItems]);
+    const mediaQuery = window.matchMedia(query);
+    const updateMatches = (event) => setMatches(event.matches);
+    mediaQuery.addEventListener('change', updateMatches);
+    return () => mediaQuery.removeEventListener('change', updateMatches);
+  }, [query]);
 
-  const changeImage = (newDirection) => {
-    setDirection(newDirection);
-    setZoomLevel(1); // Reset zoom on slide
-    
-    const currentIndex = filteredItems.findIndex(i => i.id === selectedImage.id);
-    if (currentIndex === -1) return;
+  return matches;
+}
 
-    let newIndex = currentIndex + newDirection;
-    if (newIndex >= filteredItems.length) newIndex = 0;
-    if (newIndex < 0) newIndex = filteredItems.length - 1;
+const RepoButton = memo(function RepoButton({ href, icon, label, subtitle }) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className="repo-button">
+      <span className="repo-button__icon">{createElement(icon, { className: 'h-4 w-4' })}</span>
+      <span>
+        <span className="repo-button__label">{label}</span>
+        <span className="repo-button__subtitle">{subtitle}</span>
+      </span>
+    </a>
+  );
+});
 
-    setSelectedImage(filteredItems[newIndex]);
-  };
+const SidebarButton = memo(function SidebarButton({ active, icon, label, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`sidebar-button ${active ? 'sidebar-button-active' : ''}`}
+      title={label}
+    >
+      {createElement(icon, { className: 'h-4 w-4 shrink-0' })}
+      <span className="truncate">{label}</span>
+    </button>
+  );
+});
 
-  const closeImage = () => {
-    setSelectedImage(null);
-    setZoomLevel(1);
-    setDirection(0);
-  };
+const IconButton = memo(function IconButton({ active = false, icon, label, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`icon-button ${active ? 'icon-button-active' : ''}`}
+      aria-label={label}
+      title={label}
+    >
+      {createElement(icon, { className: 'h-4 w-4' })}
+    </button>
+  );
+});
 
-  const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
+const LoadingOverlay = memo(function LoadingOverlay({ message }) {
+  return (
+    <Motion.div
+      className="loading-overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+    >
+      <div className="loading-minimal">
+        <div className="loading-minimal__spinner" aria-hidden="true" />
+        <span>{message}</span>
+      </div>
+    </Motion.div>
+  );
+});
 
-  const handleZoom = (val) => {
-    // Clamping Zoom between 1 and 4
-    setZoomLevel(prev => Math.min(Math.max(1, prev + val), 4));
-  };
+const WallpaperCard = memo(function WallpaperCard({ isMobile, onClick, wallpaper }) {
+  const [thumbnailSrc, setThumbnailSrc] = useState(wallpaper.thumbnail);
 
   return (
-    <div className="flex h-screen bg-[#050505] text-[#e4e4e7] font-sans overflow-hidden">
-      
-      {/* --- SIDEBAR --- */}
-      <motion.aside 
-        animate={{ width: sidebarOpen ? 280 : 80 }}
-        className="bg-[#09090b] border-r border-white/5 flex flex-col z-20 h-full shrink-0 relative transition-width duration-300 ease-[0.2,0,0,1]"
+    <Motion.button
+      type="button"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.24, ease: 'easeOut' }}
+      onClick={() => onClick(wallpaper)}
+      className="wallpaper-card"
+    >
+      <a
+        href={wallpaper.rawUrl}
+        download
+        target="_blank"
+        rel="noreferrer"
+        onClick={(event) => event.stopPropagation()}
+        className={`wallpaper-card__download ${isMobile ? 'wallpaper-card__download-visible' : ''}`}
+        aria-label={`Download ${wallpaper.name}`}
+        title="Download wallpaper"
       >
-        <div className="flex flex-col h-full relative">
-            
-            {/* Logo Area */}
-            <div className={`flex items-center h-16 shrink-0 border-b border-white/5 mx-4 ${sidebarOpen ? 'gap-3 px-2' : 'justify-center'}`}>
-                <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(79,70,229,0.4)]">
-                    <Squares2X2Icon className="w-5 h-5 text-white" />
-                </div>
-                {sidebarOpen && (
-                    <span className="font-bold text-lg tracking-tight text-white whitespace-nowrap overflow-hidden">
-                      Gallery
-                    </span>
-                )}
+        <ArrowDownTrayIcon className="h-4 w-4" />
+      </a>
+      <img
+        src={thumbnailSrc}
+        alt={wallpaper.name}
+        className="wallpaper-card__image"
+        loading="lazy"
+        decoding="async"
+        onError={() => {
+          if (thumbnailSrc !== wallpaper.rawUrl) {
+            setThumbnailSrc(wallpaper.rawUrl);
+          }
+        }}
+      />
+      <span className="wallpaper-card__veil" />
+      <span className="wallpaper-card__meta">
+        <span className="wallpaper-card__title">{wallpaper.name}</span>
+        <span className="wallpaper-card__folder">{wallpaper.folder}</span>
+      </span>
+    </Motion.button>
+  );
+});
+
+function SidebarContent({ collapsed, folders, onSelectFolder, selectedFolder }) {
+  return (
+    <>
+      <div className={`sidebar-brand ${collapsed ? 'sidebar-brand-collapsed' : ''}`}>
+        <img src="/favicon.svg" alt="" className="sidebar-brand__logo" />
+        {!collapsed && (
+          <div>
+            <div className="sidebar-brand__title">Gallery</div>
+            <div className="sidebar-brand__subtitle">Minimal wallpaper browser</div>
+          </div>
+        )}
+      </div>
+
+      <nav className="sidebar-nav">
+        <SidebarButton
+          active={selectedFolder === 'All'}
+          icon={Squares2X2Icon}
+          label="All Wallpapers"
+          onClick={() => onSelectFolder('All')}
+        />
+        {!collapsed && <div className="sidebar-section-label">Collections</div>}
+        {folders
+          .filter((folder) => folder !== 'All')
+          .map((folder) => (
+            <SidebarButton
+              key={folder}
+              active={selectedFolder === folder}
+              icon={FolderIcon}
+              label={folder}
+              onClick={() => onSelectFolder(folder)}
+            />
+          ))}
+      </nav>
+
+      <div className={`sidebar-actions ${collapsed ? 'sidebar-actions-collapsed' : ''}`}>
+        <RepoButton
+          href={APP_REPO_URL}
+          icon={ArrowTopRightOnSquareIcon}
+          label="Source Code"
+          subtitle="Application repository"
+        />
+        <RepoButton
+          href={WALLPAPER_REPO_URL}
+          icon={PhotoIcon}
+          label="Wallpapers"
+          subtitle="Wallpaper repository"
+        />
+      </div>
+    </>
+  );
+}
+
+export default function App() {
+  const { wallpapers, folders, loading, error } = useGitHubWallpapers();
+  const deferredWallpapers = useDeferredValue(wallpapers);
+  const [selectedFolder, setSelectedFolder] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const [selectedImageId, setSelectedImageId] = useState(null);
+  const [direction, setDirection] = useState(0);
+  const [denseLayout, setDenseLayout] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [loadedSampleKey, setLoadedSampleKey] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
+  const isMobile = useMediaQuery('(max-width: 900px)');
+  const sampleSources = useMemo(
+    () => wallpapers.slice(0, 18).map((wallpaper) => wallpaper.thumbnail),
+    [wallpapers],
+  );
+  const sampleKey = sampleSources.join('|');
+
+  const filteredItems = useMemo(() => {
+    const query = deferredSearchQuery.trim().toLowerCase();
+    let result = deferredWallpapers;
+
+    if (selectedFolder !== 'All') {
+      result = result.filter((wallpaper) => wallpaper.folder === selectedFolder);
+    }
+
+    if (query) {
+      result = result.filter((wallpaper) => wallpaper.name.toLowerCase().includes(query));
+    }
+
+    return result;
+  }, [deferredSearchQuery, deferredWallpapers, selectedFolder]);
+
+  const selectedImage = useMemo(() => {
+    if (!selectedImageId) return null;
+    return filteredItems.find((wallpaper) => wallpaper.id === selectedImageId) ?? null;
+  }, [filteredItems, selectedImageId]);
+
+  const selectedImageIndex = useMemo(() => {
+    if (!selectedImage) return -1;
+    return filteredItems.findIndex((wallpaper) => wallpaper.id === selectedImage.id);
+  }, [filteredItems, selectedImage]);
+
+  const showLoadingOverlay = loading || (!error && sampleSources.length > 0 && loadedSampleKey !== sampleKey);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = 'dark';
+    document.documentElement.style.colorScheme = 'dark';
+  }, []);
+
+  useEffect(() => {
+    if (!showLoadingOverlay) return undefined;
+    const intervalId = window.setInterval(() => {
+      setLoadingMessageIndex((value) => (value + 1) % LOADING_MESSAGES.length);
+    }, 1800);
+
+    return () => window.clearInterval(intervalId);
+  }, [showLoadingOverlay]);
+
+  useEffect(() => {
+    if (!selectedImage) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [selectedImage]);
+
+  useEffect(() => {
+    if (loading || error) return undefined;
+
+    let cancelled = false;
+    if (sampleSources.length === 0) return undefined;
+
+    Promise.allSettled(sampleSources.map((src) => preloadImage(src))).then(() => {
+      if (!cancelled) setLoadedSampleKey(sampleKey);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [error, loading, sampleKey, sampleSources]);
+
+  const closeImage = () => {
+    setSelectedImageId(null);
+    setDirection(0);
+    setPreviewLoading(false);
+  };
+
+  const openImage = (wallpaper) => {
+    setSelectedImageId(wallpaper.id);
+    setDirection(0);
+    setPreviewLoading(true);
+  };
+
+  const changeImage = useCallback((nextDirection) => {
+    if (filteredItems.length === 0) return;
+
+    const currentIndex = selectedImageIndex === -1 ? 0 : selectedImageIndex;
+    let nextIndex = currentIndex + nextDirection;
+
+    if (nextIndex >= filteredItems.length) nextIndex = 0;
+    if (nextIndex < 0) nextIndex = filteredItems.length - 1;
+
+    setDirection(nextDirection);
+    setPreviewLoading(true);
+    setSelectedImageId(filteredItems[nextIndex].id);
+  }, [filteredItems, selectedImageIndex]);
+
+  const updateFolder = (folder) => {
+    closeImage();
+    if (isMobile) setMobileSidebarOpen(false);
+    startTransition(() => {
+      setSelectedFolder(folder);
+      setSearchQuery('');
+    });
+  };
+
+  const clearSearch = () => {
+    closeImage();
+    startTransition(() => setSearchQuery(''));
+  };
+
+  useEffect(() => {
+    if (!selectedImage) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') closeImage();
+      if (event.key === 'ArrowRight') changeImage(1);
+      if (event.key === 'ArrowLeft') changeImage(-1);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [changeImage, selectedImage]);
+
+  return (
+    <div className="app-shell">
+      {isMobile && (
+        <AnimatePresence>
+          {mobileSidebarOpen && (
+            <>
+              <Motion.button
+                type="button"
+                className="mobile-sidebar-backdrop"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setMobileSidebarOpen(false)}
+                aria-label="Close navigation"
+              />
+              <Motion.aside
+                className="mobile-sidebar"
+                initial={{ x: -24, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -24, opacity: 0 }}
+                transition={{ duration: 0.16, ease: 'easeOut' }}
+              >
+                <SidebarContent
+                  collapsed={false}
+                  folders={folders}
+                  onSelectFolder={updateFolder}
+                  selectedFolder={selectedFolder}
+                />
+              </Motion.aside>
+            </>
+          )}
+        </AnimatePresence>
+      )}
+
+      {!isMobile && (
+        <aside className={`desktop-sidebar ${sidebarCollapsed ? 'desktop-sidebar-collapsed' : ''}`}>
+          <SidebarContent
+            collapsed={sidebarCollapsed}
+            folders={folders}
+            onSelectFolder={updateFolder}
+            selectedFolder={selectedFolder}
+          />
+          <button
+            type="button"
+            className="sidebar-collapse"
+            onClick={() => setSidebarCollapsed((value) => !value)}
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            <ArrowLeftIcon className={`h-4 w-4 transition-transform ${sidebarCollapsed ? 'rotate-180' : ''}`} />
+          </button>
+        </aside>
+      )}
+
+      <main className="app-main">
+        <section className="hero-panel">
+          <div className="hero-panel__head">
+            <div className="hero-panel__titlewrap">
+              {isMobile && (
+                <IconButton
+                  icon={Bars3Icon}
+                  label="Open menu"
+                  onClick={() => setMobileSidebarOpen(true)}
+                />
+              )}
+              <div>
+                <p className="hero-panel__eyebrow">{filteredItems.length} wallpapers</p>
+                <h1 className="hero-panel__title">Wallpaper gallery</h1>
+              </div>
             </div>
 
-            {/* Navigation List */}
-            <nav className="flex-1 space-y-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-3">
-                <button
-                    onClick={() => { setSelectedFolder('All'); setSearchQuery(''); }}
-                    className={`flex items-center h-11 rounded-xl transition-all ${
-                      sidebarOpen ? 'px-4 justify-start gap-3 w-full' : 'justify-center w-full'
-                    } ${selectedFolder === 'All' ? 'bg-white/10 text-white shadow-inner' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
-                    title="All Wallpapers"
-                >
-                    <Squares2X2Icon className="w-5 h-5 shrink-0" />
-                    {sidebarOpen && <span className="text-sm font-medium whitespace-nowrap">All Wallpapers</span>}
-                </button>
-
-                {sidebarOpen && <div className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest mt-6 mb-3 pl-4">Collections</div>}
-                
-                {folders.filter(f => f !== 'All').map(folder => (
-                    <button
-                        key={folder}
-                        onClick={() => { setSelectedFolder(folder); setSearchQuery(''); }}
-                        className={`flex items-center h-11 rounded-xl transition-all group ${
-                        sidebarOpen ? 'px-4 justify-start gap-3 w-full' : 'justify-center w-full'
-                        } ${selectedFolder === folder ? 'bg-white/10 text-white font-medium' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
-                        title={folder}
-                    >
-                        <FolderIcon className={`w-5 h-5 shrink-0 transition-colors ${selectedFolder === folder ? 'text-indigo-400' : 'text-zinc-600'}`} />
-                        {sidebarOpen && <span className="text-sm truncate">{folder}</span>}
-                    </button>
-                ))}
-            </nav>
-            
-            {/* Footer with Toggle & Github */}
-            <div className="p-3 border-t border-white/5 bg-[#09090b]">
-               <GithubLink collapsed={!sidebarOpen} />
-               <button 
-                  onClick={toggleSidebar}
-                  className={`w-full flex items-center h-10 rounded-xl hover:bg-white/5 text-zinc-600 transition-colors ${!sidebarOpen && 'justify-center'}`}
-               >
-                   {sidebarOpen ? (
-                       <div className="flex items-center gap-3 px-4">
-                           <Bars3BottomLeftIcon className="w-5 h-5" />
-                           <span className="text-xs font-semibold">Collapse Menu</span>
-                       </div>
-                   ) : (
-                       <Bars3Icon className="w-5 h-5" />
-                   )}
-               </button>
+            <div className="hero-panel__actions">
+              <IconButton
+                active={!denseLayout}
+                icon={Squares2X2Icon}
+                label="Comfortable grid"
+                onClick={() => startTransition(() => setDenseLayout(false))}
+              />
+              <IconButton
+                active={denseLayout}
+                icon={ViewColumnsIcon}
+                label="Dense grid"
+                onClick={() => startTransition(() => setDenseLayout(true))}
+              />
             </div>
-        </div>
-      </motion.aside>
+          </div>
 
-      {/* --- MAIN AREA --- */}
-      <main className="flex-1 h-full flex flex-col relative bg-[#050505] overflow-hidden">
-         {/* HEADER */}
-         <div className="absolute top-0 inset-x-0 z-10 px-6 pt-6 pb-6 bg-gradient-to-b from-[#050505] to-transparent pointer-events-none">
-             <div className="flex gap-4 p-1.5 rounded-2xl bg-[#09090b]/80 backdrop-blur-xl border border-white/10 shadow-2xl max-w-5xl mx-auto pointer-events-auto">
-                 <div className="flex-1 flex items-center gap-3 px-4 bg-white/5 rounded-xl border border-white/5 focus-within:bg-white/10 transition-colors h-11 group">
-                    <MagnifyingGlassIcon className="w-4 h-4 text-zinc-500 group-focus-within:text-white" />
-                    <input 
-                       type="text"
-                       placeholder="Search Library..."
-                       className="bg-transparent border-none outline-none text-sm text-white w-full h-full placeholder-zinc-500"
-                       value={searchQuery}
-                       onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                    {searchQuery && (
-                        <button onClick={() => setSearchQuery('')} className="p-1 hover:text-white text-zinc-500"><XMarkIcon className="w-4 h-4" /></button>
-                    )}
-                 </div>
+          <div className="hero-search">
+            <MagnifyingGlassIcon className="h-4 w-4 text-[var(--muted)]" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(event) => {
+                if (selectedImageId) closeImage();
+                startTransition(() => setSearchQuery(event.target.value));
+              }}
+              placeholder={`Search ${selectedFolder === 'All' ? 'wallpapers' : selectedFolder}`}
+              className="hero-search__field"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={clearSearch}
+                className="icon-button icon-button-subtle"
+                aria-label="Clear search"
+              >
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </section>
 
-                 <div className="flex items-center gap-1 border-l border-white/10 pl-2">
-                     <button onClick={() => setDenseLayout(false)} className={`p-2.5 rounded-xl ${!denseLayout ? 'bg-white/10 text-white' : 'text-zinc-600 hover:text-white'}`}>
-                       <Squares2X2Icon className="w-5 h-5" />
-                     </button>
-                     <button onClick={() => setDenseLayout(true)} className={`p-2.5 rounded-xl ${denseLayout ? 'bg-white/10 text-white' : 'text-zinc-600 hover:text-white'}`}>
-                       <ViewColumnsIcon className="w-5 h-5" />
-                     </button>
-                 </div>
-             </div>
-         </div>
-
-         {/* GRID SCROLL */}
-         <div className="flex-1 overflow-y-auto scroll-smooth pt-28 px-4 md:px-8 pb-32">
-             {loading ? (
-                <div className="flex items-center justify-center h-full text-zinc-500 gap-3">
-                   <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                   <span className="text-xs uppercase tracking-widest">Loading Assets...</span>
-                </div>
-             ) : filteredItems.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-[50vh] text-zinc-500 opacity-60">
-                   <FolderIcon className="w-16 h-16 mb-4 stroke-1" />
-                   <p>No matches found.</p>
-                </div>
-             ) : (
-                <div 
-                  className={`
-                     masonry-grid w-full max-w-[1920px] mx-auto
-                     columns-1 sm:columns-2 gap-6
-                     ${denseLayout ? 'md:columns-4 lg:columns-5' : 'md:columns-3 lg:columns-4'}
-                  `}
-                >
-                  {filteredItems.map(wallpaper => (
-                     <WallpaperCard key={wallpaper.id} wallpaper={wallpaper} onClick={setSelectedImage} />
-                  ))}
-                </div>
-             )}
-         </div>
+        <section className="gallery-panel">
+          {error ? (
+            <div className="empty-state">
+              <XMarkIcon className="mb-4 h-10 w-10 text-[var(--muted)]" />
+              <h2 className="empty-state__title">Unable to load wallpapers</h2>
+              <p className="empty-state__body">{error}</p>
+            </div>
+          ) : filteredItems.length === 0 ? (
+            <div className="empty-state">
+              <FolderIcon className="mb-4 h-10 w-10 text-[var(--muted)]" />
+              <h2 className="empty-state__title">No matches found</h2>
+              <p className="empty-state__body">Try another collection or clear the search.</p>
+            </div>
+          ) : (
+            <div
+              className={`masonry-grid ${
+                denseLayout ? 'columns-2 md:columns-3 xl:columns-4 2xl:columns-5' : 'columns-1 sm:columns-2 xl:columns-3 2xl:columns-4'
+              }`}
+            >
+              {filteredItems.map((wallpaper) => (
+                <WallpaperCard key={wallpaper.id} wallpaper={wallpaper} onClick={openImage} isMobile={isMobile} />
+              ))}
+            </div>
+          )}
+        </section>
       </main>
 
-      {/* --- PREVIEW OVERLAY --- */}
+      <AnimatePresence>{showLoadingOverlay && <LoadingOverlay message={LOADING_MESSAGES[loadingMessageIndex]} />}</AnimatePresence>
+
       <AnimatePresence>
         {selectedImage && (
-           <motion.div 
-             initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
-             animate={{ opacity: 1, backdropFilter: "blur(40px)" }}
-             exit={{ opacity: 0, backdropFilter: "blur(0px)" }}
-             transition={{ duration: 0.3 }}
-             className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80"
-             onClick={closeImage}
-             onWheel={(e) => {
-                 if (e.ctrlKey) handleZoom(e.deltaY > 0 ? -0.5 : 0.5); // Ctrl+Scroll
-             }}
-           >
-              {/* IMAGE CANVAS */}
-              <div 
-                 className="absolute inset-0 flex items-center justify-center overflow-hidden z-10"
-              >
-                 <AnimatePresence initial={false} custom={direction}>
-                    <motion.img 
-                       key={selectedImage.id} // Forces swap animation
-                       src={selectedImage.rawUrl}
-                       custom={direction}
-                       variants={slideVariants}
-                       initial="enter"
-                       animate="center"
-                       exit="exit"
-                       transition={{
-                         x: { type: "spring", stiffness: 300, damping: 30 },
-                         opacity: { duration: 0.2 }
-                       }}
-                       drag={zoomLevel > 1}
-                       dragConstraints={{ left: -800, right: 800, top: -800, bottom: 800 }}
-                       onClick={(e) => e.stopPropagation()}
-                       style={{ 
-                          scale: zoomLevel,
-                          maxHeight: '90vh',
-                          maxWidth: '95vw', 
-                          objectFit: 'contain'
-                       }}
-                       className="cursor-default shadow-2xl"
+          <Motion.div
+            className="preview-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            onClick={closeImage}
+          >
+            <div className="preview-shell preview-shell-plain" onClick={(event) => event.stopPropagation()}>
+              <div className="preview-header preview-header-floating">
+                <div>
+                  <p className="preview-title">{selectedImage.name}</p>
+                  <p className="preview-subtitle">{selectedImage.folder}</p>
+                </div>
+                <button type="button" className="icon-button" onClick={closeImage} aria-label="Close preview">
+                  <XMarkIcon className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="preview-stage">
+                <button type="button" className="preview-nav" onClick={() => changeImage(-1)} aria-label="Previous wallpaper">
+                  <ChevronLeftIcon className="h-5 w-5" />
+                </button>
+
+                <div className="preview-image-wrap">
+                  {previewLoading && (
+                    <div className="preview-loading">
+                      <div className="loading-minimal__spinner" aria-hidden="true" />
+                      <span>{selectedImage.folder === 'Others' ? 'Hanging this one straight' : `Loading ${selectedImage.folder}`}</span>
+                    </div>
+                  )}
+                  <AnimatePresence initial={false} custom={direction}>
+                    <Motion.img
+                      key={selectedImage.id}
+                      src={selectedImage.rawUrl}
+                      alt={selectedImage.name}
+                      custom={direction}
+                      variants={slideVariants}
+                      initial="enter"
+                      animate="center"
+                      exit="exit"
+                      transition={{
+                        x: { type: 'spring', stiffness: 280, damping: 28 },
+                        opacity: { duration: 0.16 },
+                      }}
+                      onLoad={() => setPreviewLoading(false)}
+                      onError={() => setPreviewLoading(false)}
+                      style={{
+                        maxHeight: '72vh',
+                        maxWidth: 'min(94vw, 1280px)',
+                        objectFit: 'contain',
+                      }}
+                      className={`preview-image ${previewLoading ? 'preview-image-loading' : ''}`}
                     />
-                 </AnimatePresence>
+                  </AnimatePresence>
+                </div>
+
+                <button type="button" className="preview-nav" onClick={() => changeImage(1)} aria-label="Next wallpaper">
+                  <ChevronRightIcon className="h-5 w-5" />
+                </button>
               </div>
 
-              {/* UI LAYER (Floating) */}
-              <div className="absolute inset-0 z-50 pointer-events-none flex flex-col justify-between p-6">
-                 
-                 {/* Top Controls */}
-                 <div className="flex justify-between items-start">
-                     <div className="bg-[#121212]/50 backdrop-blur-md border border-white/5 rounded-2xl px-5 py-3 pointer-events-auto">
-                        <h2 className="text-white font-bold drop-shadow-md truncate max-w-md">{selectedImage.name}</h2>
-                        <span className="text-xs text-zinc-400 font-mono uppercase">{selectedImage.folder}</span>
-                     </div>
-                     <button onClick={closeImage} className="p-3 bg-[#121212]/50 hover:bg-white/10 rounded-full border border-white/5 pointer-events-auto backdrop-blur-md text-white transition-colors">
-                        <XMarkIcon className="w-6 h-6" />
-                     </button>
-                 </div>
-
-                 {/* Bottom Controls */}
-                 <div className="flex justify-center items-center gap-6 pb-6 pointer-events-auto">
-                     <button onClick={(e) => { e.stopPropagation(); changeImage(-1); }} className="p-4 bg-white/5 hover:bg-white/10 rounded-full backdrop-blur-md transition-transform hover:scale-105 active:scale-95 group">
-                        <ChevronLeftIcon className="w-6 h-6 text-zinc-400 group-hover:text-white" />
-                     </button>
-
-                     <div className="flex items-center gap-6 bg-[#121212]/60 backdrop-blur-2xl px-6 py-3 rounded-2xl border border-white/10 shadow-2xl">
-                         <div className="flex items-center gap-2">
-                             <button onClick={(e) => { e.stopPropagation(); handleZoom(-0.5) }} className="p-1 hover:text-white text-zinc-400"><MinusIcon className="w-5 h-5"/></button>
-                             <span className="w-10 text-center text-sm font-mono text-zinc-300">{Math.round(zoomLevel*100)}%</span>
-                             <button onClick={(e) => { e.stopPropagation(); handleZoom(0.5) }} className="p-1 hover:text-white text-zinc-400"><PlusIcon className="w-5 h-5"/></button>
-                         </div>
-                         <div className="w-px h-6 bg-white/10" />
-                         <a href={selectedImage.rawUrl} download target="_blank" onClick={(e) => e.stopPropagation()} className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 font-bold text-sm">
-                             <ArrowDownTrayIcon className="w-5 h-5" /> <span className="hidden sm:inline">Original</span>
-                         </a>
-                     </div>
-
-                     <button onClick={(e) => { e.stopPropagation(); changeImage(1); }} className="p-4 bg-white/5 hover:bg-white/10 rounded-full backdrop-blur-md transition-transform hover:scale-105 active:scale-95 group">
-                        <ChevronRightIcon className="w-6 h-6 text-zinc-400 group-hover:text-white" />
-                     </button>
-                 </div>
+              <div className="preview-footer">
+                <div className="preview-footnote">Original resolution download</div>
+                <a href={selectedImage.rawUrl} download target="_blank" rel="noreferrer" className="repo-button repo-button-strong" onClick={(event) => event.stopPropagation()}>
+                  <span className="repo-button__icon">
+                    <ArrowDownTrayIcon className="h-4 w-4" />
+                  </span>
+                  <span>
+                    <span className="repo-button__label">Download original</span>
+                    <span className="repo-button__subtitle">Full resolution asset</span>
+                  </span>
+                </a>
               </div>
-
-           </motion.div>
+            </div>
+          </Motion.div>
         )}
       </AnimatePresence>
     </div>
