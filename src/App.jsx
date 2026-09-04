@@ -18,6 +18,7 @@ import { useGitHubWallpapers } from './hooks/useGitHubWallpapers';
 
 const APP_REPO_URL = 'https://github.com/revanthlol/gallery';
 const WALLPAPER_REPO_URL = 'https://github.com/revanthlol/wallpapers';
+const ANI_WALLPAPER_REPO_URL = 'https://github.com/revanthlol/ani-wp';
 const LOADING_MESSAGES = [
   'Curating pixels so you do not have to.',
   'Fun fact: darker wallpapers usually hide icon clutter better.',
@@ -217,7 +218,13 @@ function SidebarContent({ collapsed, folders, onSelectFolder, selectedFolder }) 
           href={WALLPAPER_REPO_URL}
           icon={PhotoIcon}
           label="Wallpapers"
-          subtitle="Wallpaper repository"
+          subtitle="Source repository"
+        />
+        <RepoButton
+          href={ANI_WALLPAPER_REPO_URL}
+          icon={PhotoIcon}
+          label="Ani Wallpapers"
+          subtitle="Source repository"
         />
       </div>
     </>
@@ -534,7 +541,7 @@ export default function App() {
                   {previewLoading && (
                     <div className="preview-loading">
                       <div className="loading-minimal__spinner" aria-hidden="true" />
-                      <span>{selectedImage.folder === 'Others' ? 'Hanging this one straight' : `Loading ${selectedImage.folder}`}</span>
+                      <span>{selectedImage.folder.endsWith('/ Others') ? 'Hanging this one straight' : `Loading ${selectedImage.folder}`}</span>
                     </div>
                   )}
                   <AnimatePresence initial={false} custom={direction}>
